@@ -22,5 +22,13 @@
 | `assistant/desktop.py` | 桌面版主流程 |
 | `scripts/` | 测试和基准脚本（bench、接口测试、加密 Key） |
 | `models/` | YOLO 权重文件（需自行下载，不入仓库） |
+
+## 下载权重
+
+在项目根目录运行，ultralytics 会自动下载缺失的权重到 `models/`：
+
+```powershell
+py -c "from ultralytics import YOLO; [YOLO(f'models/{n}.pt') for n in ('yolo26n','yolo26s','yolo26m','yolo26x','yolov8n','yolov8s','yolov8x')]"
+```
 | `assets/` | 示例图片 |
 | `docs/` | 语音接口文档 |
