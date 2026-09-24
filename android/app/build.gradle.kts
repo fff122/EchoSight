@@ -29,6 +29,8 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            // 侧载分发：用自动生成的 debug 密钥签名，保证 APK 可直接安装
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 

@@ -9,6 +9,7 @@ import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import android.widget.TextView
+import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.CameraSelector
@@ -55,8 +56,9 @@ class MainActivity : AppCompatActivity() {
     @Volatile private var lastSeenHit: Guidance.Hit? = null
     private var lastSeenTime = 0L
 
-    private val permissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()) { result ->
+    private val permissionLauncher: ActivityResultLauncher<Array<String>> =
+        registerForActivityResult(
+            ActivityResultContracts.RequestMultiplePermissions()) { result ->
         if (result[Manifest.permission.CAMERA] == true &&
             result[Manifest.permission.RECORD_AUDIO] == true) {
             startEverything()
@@ -91,8 +93,10 @@ class MainActivity : AppCompatActivity() {
         ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
             PackageManager.PERMISSION_GRANTED
 
-    private fun requestPermissions() = permissionLauncher.launch(
-        arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO))
+    private fun requestPermissions() {
+        permissionLauncher.launch(
+            arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO))
+    }
 
     private fun startEverything() {
         detector = YoloDetector(this)
@@ -207,7 +211,7 @@ class MainActivity : AppCompatActivity() {
                     true
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY_RELEASE)
+                    v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
                     val wav = ptt.stop()
                     pushButton.text = "按住\n说话"
                     if (event.action == MotionEvent.ACTION_UP && wav.size > 1000) {

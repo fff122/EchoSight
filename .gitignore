@@ -28,3 +28,6 @@ Thumbs.db
 desktop.ini
 .DS_Store
 .idea/
+
+# 误装到项目内的 SDK 副本
+AndroidSDK/

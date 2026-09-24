@@ -81,7 +81,7 @@ object Guidance {
     fun fullReport(name: String, hit: Hit, count: Int): String {
         val countPart = if (count > 1) "看到${count}个${name}，最近的一个"
                         else "看到${name}"
-        return "$countPart在${hit.direction}，${hit.verticalTip}，" +
+        return "${countPart}在${hit.direction}，${hit.verticalTip}，" +
                "距离${distanceWords(hit.dist)}。${actionTip(hit)}"
     }
 
