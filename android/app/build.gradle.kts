@@ -61,7 +61,7 @@ dependencies {
     implementation("androidx.camera:camera-view:$cameraxVersion")
 
     // 端侧 YOLO 推理
-    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.1")
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
 
     // 云端 ASR / TTS
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
