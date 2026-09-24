@@ -1,0 +1,29 @@
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# ---------- 虚拟环境 ----------
+buildenv/
+.venv/
+venv/
+
+# ---------- 密钥（只允许提交加密版 api_key.enc） ----------
+.api_key
+
+# ---------- 运行时生成的音频 / 输出 ----------
+_tts_tmp.wav
+tts_test.mp3
+runs/
+
+# ---------- 模型权重（体积大，超出 GitHub 限制，需自行下载放入） ----------
+models/*.pt
+yolo26_deploy/
+
+# ---------- Claude Code 本地状态 ----------
+.claude/
+
+# ---------- 系统文件 ----------
+Thumbs.db
+desktop.ini
+.DS_Store
