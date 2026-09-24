@@ -107,30 +107,27 @@ class YoloDetector(context: Context) {
         val output = session.run(Collections.singletonMap(inputName, tensor))
         tensor.close()
 
-        // [1, 84, 2100]：用迭代方式取第一个输出，
-        // 兼容不同版本 ORT 的 get() 返回类型差异
-        @Suppress("UNCHECKED_CAST")
-        val out = (output.first().value
-                   as Array<Array<FloatArray>>)[0]
-        output.close()
-        val candidates = out[0].size
-
+        // 输出 [1, 84, 2100]：直接从 OnnxTensor 的 FloatBuffer 按索引读取
+        //（布局为 CHW，索引 = c*2100+i），避免转成 Java 多维数组
+        val outTensor = output.get(0) as OnnxTensor
+        val fb = outTensor.floatBuffer
+        val anchors = fb.capacity() / 84      // 2100
         val raw = ArrayList<DetBox>()
-        for (i in 0 until candidates) {
+        for (i in 0 until anchors) {
             var bestScore = confThreshold
             var bestCls = -1
             for (c in 0 until 80) {
-                val s = out[4 + c][i]
+                val s = fb.get(4 * anchors + c * anchors + i)
                 if (s > bestScore) {
                     bestScore = s
                     bestCls = c
                 }
             }
             if (bestCls < 0) continue
-            val cx = out[0][i]
-            val cy = out[1][i]
-            val bw = out[2][i]
-            val bh = out[3][i]
+            val cx = fb.get(i)
+            val cy = fb.get(anchors + i)
+            val bw = fb.get(2 * anchors + i)
+            val bh = fb.get(3 * anchors + i)
 
             // 反 letterbox 到原画面坐标
             val x1 = (cx - bw / 2 - padX) / scale
@@ -144,6 +141,8 @@ class YoloDetector(context: Context) {
                 y2.coerceIn(0f, h.toFloat()),
                 bestCls, bestScore))
         }
+        outTensor.close()
+        output.close()
         return nms(raw)
     }
 
