@@ -1,0 +1,46 @@
+name: 打包 Android APK
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:   # 支持在 Actions 页面手动触发
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      # 从仓库 Secrets 注入，Key 不会出现在日志里
+      SENSEAUDIO_API_KEY: ${{ secrets.SENSEAUDIO_API_KEY }}
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: 配置 Gradle 缓存
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: 编译 Release APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleRelease --no-daemon --stacktrace
+
+      - name: 上传 APK（本页可下载）
+        uses: actions/upload-artifact@v4
+        with:
+          name: EchoSight-apk
+          path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+
+      - name: 发布到 Release（仅打 v* 标签时）
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: android/app/build/outputs/apk/release/*.apk

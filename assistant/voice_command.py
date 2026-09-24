@@ -22,7 +22,7 @@ TARGET_PREFIXES = ("帮我找一个", "帮我找下", "帮我找", "我要找一
                    "我想找", "请找一个", "请找下", "请找", "找一个",
                    "找下", "找", "换成", "换一个", "换个", "换")
 
-_block = int(config.VAD_BLOCK_SEC * config.SAMPLE_RATE)
+_block_frames = int(config.VAD_BLOCK_SEC * config.SAMPLE_RATE)
 _start_blocks = config.VAD_START_BLOCKS
 _end_blocks = config.VAD_END_BLOCKS
 _min_len = int(config.VAD_MIN_SEC / config.VAD_BLOCK_SEC)
@@ -46,14 +46,18 @@ def parse_command(text):
 
 
 class VoiceListener:
-    """能量 VAD + ASR 指令识别。on_command(kind, value) 在监听线程中回调。"""
+    """能量 VAD + ASR 指令识别。on_command(kind, value) 在监听线程中回调。
+
+    全程只开一条持续的 InputStream，逐块读取，避免反复开关流造成
+    录音断续、ASR 识别失败。
+    """
 
     def __init__(self, on_command):
         self.on_command = on_command
         self.active = True
         self._muted = threading.Event()
         self.threshold = config.VAD_MIN_RMS
-        threading.Thread(target=self._loop, daemon=True).start()
+        threading.Thread(target=self._run, daemon=True).start()
 
     def stop(self):
         self.active = False
@@ -67,31 +71,28 @@ class VoiceListener:
         self._muted.clear()
 
     # ---------------- 内部实现 ----------------
-    def _calibrate(self):
+    def _rms(self, x):
+        return float(np.sqrt(np.mean(x.astype(np.float32) ** 2)))
+
+    def _calibrate(self, stream):
         n = int(config.VAD_CALIBRATE_SEC * config.SAMPLE_RATE)
-        rec = sd.rec(n, samplerate=config.SAMPLE_RATE,
-                     channels=1, dtype="int16")
-        sd.wait()
-        x = rec[:, 0].astype(np.float32)
-        rms = float(np.sqrt(np.mean(x * x)))
+        rec, _ = stream.read(n)
+        rms = self._rms(rec[:, 0])
         self.threshold = max(config.VAD_MIN_RMS,
                              rms * config.VAD_NOISE_FACTOR)
         print(f"[监听] 环境噪声 RMS={rms:.0f}，触发阈值={self.threshold:.0f}")
 
-    def _record_utterance(self, first_blocks):
+    def _record_utterance(self, stream, first_blocks):
         """已确认说话开始，继续录音直到停顿或超时，返回 int16 一维数组。"""
         chunks = list(first_blocks)
         quiet = 0
         length = len(chunks)
         while length < _max_len:
-            b = sd.rec(_block, samplerate=config.SAMPLE_RATE,
-                       channels=1, dtype="int16")
-            sd.wait()
+            b, overflowed = stream.read(_block_frames)
             x = b[:, 0]
             chunks.append(x)
             length += 1
-            rms = float(np.sqrt(np.mean(x.astype(np.float32) ** 2)))
-            if rms < self.threshold:
+            if self._rms(x) < self.threshold:
                 quiet += 1
                 if quiet >= _end_blocks:
                     break
@@ -100,35 +101,36 @@ class VoiceListener:
         audio = np.concatenate(chunks)
         return audio if length >= _min_len else None
 
-    def _loop(self):
-        self._calibrate()
-        loud = 0
-        pending = []
-        while self.active:
-            b = sd.rec(_block, samplerate=config.SAMPLE_RATE,
-                       channels=1, dtype="int16")
-            sd.wait()
-            x = b[:, 0]
-            rms = float(np.sqrt(np.mean(x.astype(np.float32) ** 2)))
-            if rms >= self.threshold:
-                loud += 1
-                pending.append(x)
-                if loud == _start_blocks:
-                    # 确认说话开始；屏蔽期间直接丢弃，不进入识别
-                    if self._muted.is_set():
-                        loud, pending = 0, []
-                        continue
-                    audio = self._record_utterance(pending)
-                    loud, pending = 0, []
-                    if audio is not None:
-                        self._handle(audio)
-            else:
-                if loud > 0:
-                    # 说话前的短停顿，先缓存可能是开头的部分
+    def _run(self):
+        with sd.InputStream(samplerate=config.SAMPLE_RATE, channels=1,
+                            dtype="int16", blocksize=_block_frames) as stream:
+            self._calibrate(stream)
+            loud = 0
+            pending = []
+            while self.active:
+                b, overflowed = stream.read(_block_frames)
+                if overflowed:
+                    print("[监听] 音频缓冲溢出（建议关闭占CPU的程序）")
+                x = b[:, 0]
+                if self._rms(x) >= self.threshold:
+                    loud += 1
                     pending.append(x)
-                loud = 0
-                if len(pending) > _start_blocks + _end_blocks:
-                    pending = pending[-_start_blocks:]
+                    if loud == _start_blocks:
+                        # 确认说话开始；屏蔽期间直接丢弃，不进入识别
+                        if self._muted.is_set():
+                            loud, pending = 0, []
+                            continue
+                        audio = self._record_utterance(stream, pending)
+                        loud, pending = 0, []
+                        if audio is not None:
+                            self._handle(audio)
+                else:
+                    if loud > 0:
+                        # 说话前的短停顿，先缓存可能是开头的部分
+                        pending.append(x)
+                    loud = 0
+                    if len(pending) > _start_blocks + _end_blocks:
+                        pending = pending[-_start_blocks:]
 
     def _handle(self, audio):
         import io
@@ -143,4 +145,7 @@ class VoiceListener:
         text = transcribe(buf)
         cmd = parse_command(text)
         if cmd:
+            print(f"[指令] {cmd[0]}: {cmd[1]}")
             self.on_command(*cmd)
+        elif text:
+            print("[指令] 没听懂这句话，可重新说“找XX”或“找到了”")

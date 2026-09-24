@@ -1,0 +1,15 @@
+# Gradle / Android 构建产物
+.gradle/
+build/
+app/build/
+local.properties
+
+# 本地构建用的 Key 文件（Key 只从 GitHub Secret 进入 CI）
+app/api_key.txt
+
+# IDE
+*.iml
+.idea/
+captures/
+.externalNativeBuild/
+.cxx/

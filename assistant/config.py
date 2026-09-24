@@ -16,32 +16,10 @@ TMP_WAV = ROOT / "_tts_tmp.wav"
 BASE = "https://api.senseaudio.cn"
 
 
-ENC_KEY_FILE = Path(__file__).parent / "api_key.enc"
-
-
-def _decrypt_key():
-    """读加密文件，提示输入密码解密；最多试 3 次。"""
-    import getpass
-    from .crypto_util import decrypt
-
-    blob = ENC_KEY_FILE.read_bytes()
-    for attempt in range(3):
-        password = getpass.getpass("请输入解密密钥: ").strip()
-        try:
-            key = decrypt(blob, password).decode("utf-8").strip()
-        except UnicodeDecodeError:
-            key = ""
-        if key.startswith("sk-"):
-            return key
-        print("密钥错误，请重试。" if attempt < 2 else "")
-    raise SystemExit("解密失败，程序退出。")
-
-
 def _load_api_key():
     """Key 来源优先级：
     1. 环境变量 SENSEAUDIO_API_KEY
-    2. 根目录 .api_key 明文文件（本地开发用，已 gitignore）
-    3. 加密文件 assistant/api_key.enc（运行时输入密码解密）
+    2. 根目录 .api_key 明文文件（已 gitignore，不入仓库）
     """
     key = os.environ.get("SENSEAUDIO_API_KEY")
     if key:
@@ -49,9 +27,9 @@ def _load_api_key():
     key_file = ROOT / ".api_key"
     if key_file.exists():
         return key_file.read_text(encoding="utf-8").strip()
-    if ENC_KEY_FILE.exists():
-        return _decrypt_key()
-    return ""
+    raise SystemExit(
+        "未找到 API Key：请设置环境变量 SENSEAUDIO_API_KEY，"
+        "或在项目根目录创建 .api_key 文件（写入 sk- 开头的 Key）。")
 
 
 API_KEY = _load_api_key()

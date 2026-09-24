@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="?android:colorBackground">
+
+    <androidx.camera.view.PreviewView
+        android:id="@+id/previewView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        app:scaleType="fitCenter" />
+
+    <!-- 顶部渐暗，让状态卡片更清楚 -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="140dp"
+        android:layout_gravity="top"
+        android:background="@drawable/scrim_top" />
+
+    <com.echosight.app.OverlayView
+        android:id="@+id/overlayView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- 状态卡片（Material You：大圆角、柔和填充） -->
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/statusCard"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:layout_margin="16dp"
+        app:cardBackgroundColor="@color/status_card_bg"
+        app:cardCornerRadius="28dp"
+        app:cardElevation="3dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:padding="16dp">
+
+            <ImageView
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:layout_marginEnd="12dp"
+                android:src="@drawable/ic_visibility"
+                app:tint="@color/status_card_text" />
+
+            <TextView
+                android:id="@+id/statusText"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textColor="@color/status_card_text"
+                android:textSize="17sp"
+                android:text="正在启动…" />
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+
+    <!-- 底部渐暗，让按钮更清楚 -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="220dp"
+        android:layout_gravity="bottom"
+        android:background="@drawable/scrim_bottom" />
+
+    <!-- 按住说话大按钮：圆形、录音时变红 -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/pushButton"
+        android:layout_width="124dp"
+        android:layout_height="124dp"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="36dp"
+        android:insetTop="0dp"
+        android:insetBottom="0dp"
+        android:text="按住\n说话"
+        android:textColor="@color/white"
+        android:textSize="19sp"
+        app:backgroundTint="@color/mic_button"
+        app:cornerRadius="62dp"
+        app:elevation="6dp"
+        app:icon="@drawable/ic_mic"
+        app:iconGravity="textTop"
+        app:iconPadding="4dp"
+        app:iconSize="30dp"
+        app:iconTint="@color/white" />
+
+</FrameLayout>

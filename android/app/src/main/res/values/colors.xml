@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+
+    <!-- 品牌主色（绿色，呼应"视见"） -->
+    <color name="primary">#FF2E7D32</color>
+
+    <!-- 状态卡片 -->
+    <color name="status_card_bg">#E61B1B1F</color>
+    <color name="status_card_text">#FFE6E6E6</color>
+
+    <!-- 说话按钮 -->
+    <color name="mic_button">#FF1565C0</color>
+    <color name="mic_button_recording">#FFD32F2F</color>
+</resources>

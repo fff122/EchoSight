@@ -8,7 +8,7 @@ buildenv/
 .venv/
 venv/
 
-# ---------- 密钥（只允许提交加密版 api_key.enc） ----------
+# ---------- 密钥 ----------
 .api_key
 
 # ---------- 运行时生成的音频 / 输出 ----------
@@ -27,3 +27,4 @@ yolo26_deploy/
 Thumbs.db
 desktop.ini
 .DS_Store
+.idea/

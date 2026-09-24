@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 简化的眼睛图标 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,38 C40,38 29,47 24,54 C29,61 40,70 54,70 C68,70 79,61 84,54 C79,47 68,38 54,38 Z M54,63 C49,63 45,59 45,54 C45,49 49,45 54,45 C59,45 63,49 63,54 C63,59 59,63 54,63 Z" />
+</vector>

@@ -1,0 +1,13 @@
+# EchoSight 运行依赖（Python 3.10 - 3.12，开发环境为 3.12）
+#
+# 重要：本机无 NVIDIA 显卡，请先安装 CPU 版 torch，再安装本文件：
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+# 否则 pip 会默认下载约 2.5GB 的 CUDA 版 torch。
+#
+# 程序直接用到的第三方库：
+ultralytics        # YOLO 推理（yolo26 / yolov8 权重，需较新版本以支持 yolo26）
+opencv-python      # 摄像头取流、画面显示（cv2）
+numpy              # 音频与图像数组处理
+Pillow             # 画面中文标注绘制（PIL）
+requests           # 云端 TTS / ASR HTTP 接口
+sounddevice        # 麦克风录音（需 PortAudio，Windows 轮子自带）
