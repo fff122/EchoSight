@@ -163,10 +163,10 @@ class SiliconFlowApi(private val apiKey: String) {
         private const val MODEL = "Qwen/Qwen3-VL-30B-A3B-Instruct"
         private val JSON_MEDIA = "application/json; charset=utf-8".toMediaType()
 
-        /** 快照压到最长边 640 的 JPEG，识别够用且体积小（几十 KB）。 */
-        fun compressSnapshot(src: Bitmap, quality: Int = 70): ByteArray {
+        /** 快照压到最长边 512 的 JPEG——越小传得越快，找东西要抢时间。 */
+        fun compressSnapshot(src: Bitmap, quality: Int = 60): ByteArray {
             val maxSide = maxOf(src.width, src.height)
-            val scale = if (maxSide > 640) 640f / maxSide else 1f
+            val scale = if (maxSide > 512) 512f / maxSide else 1f
             val small = if (scale < 1f) Bitmap.createScaledBitmap(
                 src, (src.width * scale).toInt().coerceAtLeast(1),
                 (src.height * scale).toInt().coerceAtLeast(1), true) else src

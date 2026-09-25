@@ -77,6 +77,8 @@ class MainActivity : AppCompatActivity() {
     @Volatile private var visionSignature: String? = null
     @Volatile private var visionName: String? = null
     @Volatile private var pendingSnapshotUse = ""   // "find"=找目标 / "scan"=扫描
+    private var lastVisionFoundPos: String? = null
+    private var lastVisionFoundTime = 0L
 
     // ---------------- 方案A：引导扫描 + 记忆 ----------------
     // 0=空闲 1=问房间 2=扫描中 3=收尾打框
@@ -102,7 +104,9 @@ class MainActivity : AppCompatActivity() {
         "待命" to "找到东西以后，说，找到了，我就不播报了。" +
                 "想找别的东西，再按住按钮说，找，加新名字。",
         "AI帮看" to "遇到我不认识的物品，或者目标一时找不到，我会自动抓拍画面，" +
-                "请AI帮忙看，大约每十五秒一次，看到就告诉你它在画面里的位置。",
+                "请AI帮忙看：你走动时几秒一次，停下来就慢一些。" +
+                "看到就告诉你它在画面里的位置；如果刚看到又找不到了，" +
+                "我会提醒你放慢脚步往回转。",
         "记忆" to "你可以问我东西在哪，说，耳机在哪；也可以自己登记，说，" +
                 "记一下，遥控器在茶几上；不要了就说，忘掉，加名字；" +
                 "换了房间就说，我在客厅。",
@@ -789,9 +793,13 @@ class MainActivity : AppCompatActivity() {
     private fun maybeAskVision(now: Long) {
         val sig = currentSignature() ?: return
         if (BuildConfig.SILICONFLOW_KEY.isBlank() || visionBusy) return
-        if (now - searchStart < 6000) return
-        val interval = if (freeTarget != null) FREE_VISION_INTERVAL
-                       else VISION_CHECK_INTERVAL
+        val free = freeTarget != null
+        if (now - searchStart < if (free) VISION_FIRST_FREE else VISION_FIRST_COCO) {
+            return
+        }
+        // 画面在变 = 用户在走动/转动：加快节奏，免得走过头了才报位置
+        val interval = if (detector.sceneChangeScore > 0.04f) VISION_WALKING
+                       else VISION_IDLE
         if (now - lastVisionCheck < interval) return
         val tid = targetId
         val name = freeTarget ?: tid?.let { Labels.CLASS_CN[it] } ?: return
@@ -838,11 +846,26 @@ class MainActivity : AppCompatActivity() {
             if (standby || currentSignature() != sig) return@launch
             // 注意"没有看到耳机"也包含物品名，只认"有"开头的回答
             val found = answer.startsWith("有")
+            if (found) {
+                lastVisionFoundPos = POS_WORDS.firstOrNull { answer.contains(it) }
+                lastVisionFoundTime = System.currentTimeMillis()
+                MemoryStore.touch(name, currentRoom)
+            } else if (lastVisionFoundPos != null &&
+                System.currentTimeMillis() - lastVisionFoundTime < 25000) {
+                // 刚看到过现在又说没有：多半是走过头了，往回带
+                val dir = when (lastVisionFoundPos) {
+                    "左上", "左中", "左下" -> "往左"
+                    "右上", "右中", "右下" -> "往右"
+                    else -> "原地"
+                }
+                speak("$name 刚才还在画面里，请放慢脚步，$dir 慢慢转回去找。")
+            } else {
+                lastVisionFoundPos = null
+            }
             val tip = if (found) "拿到后说，找到了。" else ""
             speak("我请AI仔细看了画面：$answer。$tip")
             setStatus("AI帮看：$answer",
                 if (found) R.color.status_icon_found else R.color.status_card_text)
-            if (found) MemoryStore.touch(name, currentRoom)
         }
     }
 
@@ -908,7 +931,14 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val LOSE_PROMPT_INTERVAL = 7000L
         private const val FOUND_REPORT_INTERVAL = 5000L
-        private const val VISION_CHECK_INTERVAL = 25000L
-        private const val FREE_VISION_INTERVAL = 15000L
+
+        // 识图兜底节奏：走动时快、停着时省；自由目标几乎立刻先看一次
+        private const val VISION_FIRST_FREE = 800L
+        private const val VISION_FIRST_COCO = 3000L
+        private const val VISION_WALKING = 5000L
+        private const val VISION_IDLE = 12000L
+
+        private val POS_WORDS = listOf("左上", "右上", "左下", "右下",
+                                       "左中", "右中", "中间")
     }
 }
