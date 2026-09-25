@@ -9,6 +9,10 @@
     <!-- 状态卡片 -->
     <color name="status_card_bg">#E61B1B1F</color>
     <color name="status_card_text">#FFE6E6E6</color>
+    <!-- 状态图标语义色：在听/识别中=琥珀，找到=绿，出错=红，默认=status_card_text -->
+    <color name="status_icon_active">#FFFFC107</color>
+    <color name="status_icon_found">#FF7CD98A</color>
+    <color name="status_icon_error">#FFFF8A80</color>
 
     <!-- 说话按钮 -->
     <color name="mic_button">#FF1565C0</color>

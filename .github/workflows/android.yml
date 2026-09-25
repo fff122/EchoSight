@@ -12,6 +12,7 @@ jobs:
     env:
       # 从仓库 Secrets 注入，Key 不会出现在日志里
       SENSEAUDIO_API_KEY: ${{ secrets.SENSEAUDIO_API_KEY }}
+      SILICONFLOW_API_KEY: ${{ secrets.SILICONFLOW_API_KEY }}
 
     steps:
       - name: 检出代码

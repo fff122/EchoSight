@@ -49,6 +49,10 @@ class YoloDetector(context: Context) {
         inputName = session.inputNames.first()
     }
 
+    /** 置 true 时，下一次 detect() 把当帧压成 JPEG 并回调 [onSnapshot]（供识图兜底用）。 */
+    @Volatile var snapshotRequest = false
+    var onSnapshot: ((ByteArray) -> Unit)? = null
+
     /** 相机帧（YUV）→ 转正 Bitmap → 推理；返回框坐标基于转正后画面。 */
     fun detect(image: ImageProxy): List<DetBox> {
         val raw = yuvToBitmap(image)
@@ -59,6 +63,11 @@ class YoloDetector(context: Context) {
         if (rotated != raw) raw.recycle()
 
         val boxes = infer(rotated)
+
+        if (snapshotRequest) {
+            snapshotRequest = false
+            onSnapshot?.invoke(SiliconFlowApi.compressSnapshot(rotated))
+        }
         rotated.recycle()
         return boxes
     }

@@ -13,6 +13,14 @@ val senseAudioKey: String =
     if (apiKeyFile.exists()) apiKeyFile.readText().trim()
     else (System.getenv("SENSEAUDIO_API_KEY") ?: "")
 
+// SiliconFlow 图像问答 Key（Qwen3-VL 兜底识别），来源与上面一致：
+//   1. app/siliconflow_key.txt（本地构建，已 gitignore）
+//   2. 环境变量 SILICONFLOW_API_KEY（GitHub Actions 从 Secret 注入）
+val visionKeyFile = rootProject.file("app/siliconflow_key.txt")
+val siliconFlowKey: String =
+    if (visionKeyFile.exists()) visionKeyFile.readText().trim()
+    else (System.getenv("SILICONFLOW_API_KEY") ?: "")
+
 android {
     namespace = "com.echosight.app"
     compileSdk = 35
@@ -24,6 +32,7 @@ android {
         versionCode = 1
         versionName = "1.0"
         buildConfigField("String", "SENSEAUDIO_KEY", "\"$senseAudioKey\"")
+        buildConfigField("String", "SILICONFLOW_KEY", "\"$siliconFlowKey\"")
     }
 
     buildTypes {

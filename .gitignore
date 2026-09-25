@@ -31,3 +31,5 @@ desktop.ini
 
 # 误装到项目内的 SDK 副本
 AndroidSDK/
+android/app/api_key.txt
+android/app/siliconflow_key.txt

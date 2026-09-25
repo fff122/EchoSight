@@ -16,7 +16,8 @@
         android:layout_width="match_parent"
         android:layout_height="140dp"
         android:layout_gravity="top"
-        android:background="@drawable/scrim_top" />
+        android:background="@drawable/scrim_top"
+        android:importantForAccessibility="no" />
 
     <com.echosight.app.OverlayView
         android:id="@+id/overlayView"
@@ -42,10 +43,12 @@
             android:padding="16dp">
 
             <ImageView
-                android:layout_width="28dp"
-                android:layout_height="28dp"
+                android:id="@+id/statusIcon"
+                android:layout_width="30dp"
+                android:layout_height="30dp"
                 android:layout_marginEnd="12dp"
                 android:src="@drawable/ic_visibility"
+                android:importantForAccessibility="no"
                 app:tint="@color/status_card_text" />
 
             <TextView
@@ -54,7 +57,11 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:textColor="@color/status_card_text"
-                android:textSize="17sp"
+                android:textSize="20sp"
+                android:textStyle="bold"
+                android:maxLines="4"
+                android:ellipsize="end"
+                android:accessibilityLiveRegion="polite"
                 android:text="正在启动…" />
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
@@ -64,27 +71,29 @@
         android:layout_width="match_parent"
         android:layout_height="220dp"
         android:layout_gravity="bottom"
-        android:background="@drawable/scrim_bottom" />
+        android:background="@drawable/scrim_bottom"
+        android:importantForAccessibility="no" />
 
-    <!-- 按住说话大按钮：圆形、录音时变红 -->
+    <!-- 按住说话大按钮：圆形、录音时变红（代码里切换 tint） -->
     <com.google.android.material.button.MaterialButton
         android:id="@+id/pushButton"
-        android:layout_width="124dp"
-        android:layout_height="124dp"
+        android:layout_width="140dp"
+        android:layout_height="140dp"
         android:layout_gravity="bottom|center_horizontal"
-        android:layout_marginBottom="36dp"
+        android:layout_marginBottom="44dp"
         android:insetTop="0dp"
         android:insetBottom="0dp"
         android:text="按住\n说话"
         android:textColor="@color/white"
-        android:textSize="19sp"
+        android:textSize="20sp"
+        android:textStyle="bold"
         app:backgroundTint="@color/mic_button"
-        app:cornerRadius="62dp"
+        app:cornerRadius="70dp"
         app:elevation="6dp"
         app:icon="@drawable/ic_mic"
         app:iconGravity="textTop"
         app:iconPadding="4dp"
-        app:iconSize="30dp"
+        app:iconSize="32dp"
         app:iconTint="@color/white" />
 
 </FrameLayout>
