@@ -53,6 +53,7 @@ class MainActivity : AppCompatActivity() {
 
     // ---------------- 目标状态 ----------------
     @Volatile private var targetId: Int? = null
+    @Volatile private var freeTarget: String? = null   // COCO 之外的物品名
     @Volatile private var standby = false
     private var searchStart = 0L
     private var lastLosePrompt = 0L
@@ -64,11 +65,11 @@ class MainActivity : AppCompatActivity() {
     @Volatile private var lastSeenHit: Guidance.Hit? = null
     private var lastSeenTime = 0L
 
-    // 识图兜底（YOLO 找不到时问一次视觉大模型）
+    // 识图兜底（YOLO 找不到或 COCO 外目标时，问一次视觉大模型）
     private var lastVisionCheck = 0L
     @Volatile private var visionBusy = false
-    @Volatile private var visionTargetId: Int? = null
-    @Volatile private var visionTargetCn: String? = null
+    @Volatile private var visionSignature: String? = null
+    @Volatile private var visionName: String? = null
 
     private val permissionLauncher: ActivityResultLauncher<Array<String>> =
         registerForActivityResult(
@@ -173,28 +174,40 @@ class MainActivity : AppCompatActivity() {
         val tid = targetId
         val now = System.currentTimeMillis()
 
-        if (tid == null) {
+        val ft = freeTarget
+        val frameW = detector.frameWidth.toFloat()
+        val frameH = detector.frameHeight.toFloat()
+
+        // 待机：只画不播
+        if (standby) {
+            overlay.drawBoxes = if (tid != null) boxes.filter { it.cls == tid }.map {
+                val h = Guidance.buildHit(it, frameW, frameH, tid)
+                DrawBox(h.box, "${Labels.CLASS_CN[tid]} ${h.direction}")
+            } else emptyList()
+            setStatus("已找到，安静待命中。要换东西就按住按钮说：找某某",
+                R.color.status_icon_found)
+            return
+        }
+
+        if (tid == null && ft == null) {
             overlay.drawBoxes = emptyList()
             setStatus("等待指令：按住下方大按钮说话", R.color.status_card_text)
             return
         }
-        val frameW = detector.frameWidth.toFloat()
-        val frameH = detector.frameHeight.toFloat()
+
+        // COCO 外的自由目标：YOLO 无能为力，定期请 AI 看画面
+        if (tid == null) {
+            overlay.drawBoxes = emptyList()
+            setStatus("寻找$ft 中…（AI 每隔一会儿帮你看一眼画面）",
+                R.color.status_icon_active)
+            maybeAskVision(now)
+            return
+        }
 
         val hits = boxes.filter { it.cls == tid }.map {
             Guidance.buildHit(it, frameW, frameH, tid)
         }
         val cn = Labels.CLASS_CN[tid]
-
-        // 待机：只画不播
-        if (standby) {
-            overlay.drawBoxes = hits.map {
-                DrawBox(it.box, "${cn} ${it.direction}")
-            }
-            setStatus("已找到，安静待命中。要换东西就按住按钮说：找某某",
-                R.color.status_icon_found)
-            return
-        }
 
         if (hits.isNotEmpty()) {
             searchStart = now
@@ -233,7 +246,7 @@ class MainActivity : AppCompatActivity() {
                 speak(Guidance.lostReport(cn, lastSeenHit, age))
                 lastLosePrompt = now
             }
-            maybeAskVision(tid, cn, now)
+            maybeAskVision(now)
         }
     }
 
@@ -277,6 +290,7 @@ class MainActivity : AppCompatActivity() {
             val text = withContext(Dispatchers.IO) { api.transcribe(wav) }
             when (val cmd = Labels.parseCommand(text)) {
                 is Labels.Command.Target -> switchTarget(cmd.classId)
+                is Labels.Command.FreeTarget -> switchFreeTarget(cmd.name)
                 Labels.Command.Found -> {
                     standby = true
                     speak("好的，我先安静待命。需要找别的东西时，按住按钮说，找，加上物品名字。")
@@ -299,11 +313,12 @@ class MainActivity : AppCompatActivity() {
     private fun switchTarget(newId: Int) {
         val cn = Labels.CLASS_CN[newId]
         val now = System.currentTimeMillis()
-        if (newId == targetId && !standby) {
+        if (newId == targetId && freeTarget == null && !standby) {
             speak("已经在帮你找$cn 了。")
             return
         }
         targetId = newId
+        freeTarget = null
         standby = false
         searchStart = now
         lastLosePrompt = now
@@ -311,43 +326,83 @@ class MainActivity : AppCompatActivity() {
         lastSpokenDist = null
         lastSeenHit = null
         lastSeenTime = 0L
+        lastVisionCheck = 0L
         setStatus("当前目标：$cn")
         speak("好的，现在帮你寻找$cn。请把手机摄像头对准前方，慢慢转动身体，我会告诉你它在哪里。")
     }
 
+    /** COCO 之外的目标（耳机、药盒…）：YOLO 不认识，交给识图兜底定期看画面。 */
+    private fun switchFreeTarget(name: String) {
+        if (BuildConfig.SILICONFLOW_KEY.isBlank()) {
+            speak("识图功能没有配置，暂时帮不了你找$name。")
+            return
+        }
+        val now = System.currentTimeMillis()
+        if (name == freeTarget && !standby) {
+            speak("已经在帮你找$name 了。")
+            return
+        }
+        targetId = null
+        standby = false
+        freeTarget = name
+        searchStart = now
+        lastLosePrompt = now
+        lastFoundReport = now
+        lastSpokenDist = null
+        lastSeenHit = null
+        lastSeenTime = 0L
+        lastVisionCheck = 0L
+        setStatus("当前目标：$name（AI帮看）")
+        speak("好的，帮你寻找$name。它不在常见物品清单里，我会每隔一会儿请AI帮你看画面，找到后告诉你位置。拿到后说，找到了。")
+    }
+
     // ---------------- 识图兜底 ----------------
-    /** YOLO 找了几秒还没找到：下一帧抓张快照，问一次视觉大模型（25 秒限流控成本）。 */
-    private fun maybeAskVision(tid: Int, cn: String, now: Long) {
+    /** 当前目标的唯一标识：COCO 目标用类别 id，自由目标用名字；无目标返回 null。 */
+    private fun currentSignature(): String? = when {
+        targetId != null -> "id:${targetId}"
+        freeTarget != null -> "free:${freeTarget}"
+        else -> null
+    }
+
+    /** 找了几秒还没找到：下一帧抓张快照，问一次视觉大模型（限流控成本）。 */
+    private fun maybeAskVision(now: Long) {
+        val sig = currentSignature() ?: return
         if (BuildConfig.SILICONFLOW_KEY.isBlank() || visionBusy) return
         if (now - searchStart < 6000) return
-        if (now - lastVisionCheck < VISION_CHECK_INTERVAL) return
+        val interval = if (freeTarget != null) FREE_VISION_INTERVAL
+                       else VISION_CHECK_INTERVAL
+        if (now - lastVisionCheck < interval) return
+        val tid = targetId
+        val name = freeTarget ?: tid?.let { Labels.CLASS_CN[it] } ?: return
         lastVisionCheck = now
-        visionTargetId = tid
-        visionTargetCn = cn
+        visionSignature = sig
+        visionName = name
         detector.snapshotRequest = true
     }
 
     /** 在分析线程收到快照：异步问模型，回来播报。期间换目标/进入待命则丢弃。 */
     private fun handleSnapshot(jpeg: ByteArray) {
-        val tid = visionTargetId ?: return
-        val cn = visionTargetCn ?: return
-        visionTargetId = null
-        visionTargetCn = null
+        val sig = visionSignature ?: return
+        val name = visionName ?: return
+        visionSignature = null
+        visionName = null
         visionBusy = true
         lifecycleScope.launch {
-            setStatus("YOLO 没找到$cn，正在请 AI 帮忙看画面…",
+            setStatus("正在请 AI 帮忙看画面，找$name…",
                 R.color.status_icon_active)
             val answer = withContext(Dispatchers.IO) {
-                vision.askAboutFrame(jpeg, cn)
+                vision.askAboutFrame(jpeg, name)
             }
             visionBusy = false
             if (answer == null) {
                 Log.w("MainActivity", "识图兜底失败")
                 return@launch
             }
-            if (targetId != tid || standby) return@launch
-            val found = answer.startsWith("有") || answer.contains(cn)
-            speak("我请AI仔细看了画面：$answer")
+            if (standby || currentSignature() != sig) return@launch
+            // 注意"没有看到耳机"也包含物品名，只认"有"开头的回答
+            val found = answer.startsWith("有")
+            val tip = if (found) "拿到后说，找到了。" else ""
+            speak("我请AI仔细看了画面：$answer。$tip")
             setStatus("AI帮看：$answer",
                 if (found) R.color.status_icon_found else R.color.status_card_text)
         }
@@ -416,5 +471,6 @@ class MainActivity : AppCompatActivity() {
         private const val LOSE_PROMPT_INTERVAL = 7000L
         private const val FOUND_REPORT_INTERVAL = 5000L
         private const val VISION_CHECK_INTERVAL = 25000L
+        private const val FREE_VISION_INTERVAL = 15000L
     }
 }

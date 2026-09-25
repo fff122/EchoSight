@@ -112,6 +112,9 @@ object Labels {
     sealed class Command {
         data object Found : Command()
         data class Target(val classId: Int) : Command()
+
+        /** COCO 之外的目标（耳机、药盒…）：YOLO 不认识，交给识图兜底。 */
+        data class FreeTarget(val name: String) : Command()
     }
 
     /** 从一句话里按最长别名匹配，返回类别 id；匹配不到返回 null。 */
@@ -122,15 +125,33 @@ object Labels {
         return null
     }
 
-    /** 解析 ASR 文本，返回 Found / Target / null。 */
+    // 不是物品名的词：防止把"找一下""找个东西"这类话当成目标
+    private val FREE_STOPWORDS = arrayOf(
+        "一下", "东西", "帮忙", "谢谢", "没有", "找到", "别", "不", "你", "我", "他", "她", "它")
+
+    /** 剥掉引导词后，剩下的部分像不像一个物品名（耳机/药盒…）。 */
+    private fun plausibleItemName(rest: String): String? {
+        var s = rest.replace(" ", "").trim()   // ASR 可能在字间插空格
+        for (lead in arrayOf("一个", "个", "些")) {
+            if (s.startsWith(lead)) { s = s.removePrefix(lead).trim(); break }
+        }
+        if (s.isEmpty() || s.length > 8) return null
+        if (FREE_STOPWORDS.any { s.contains(it) }) return null
+        // 只收汉字/字母，避免把数字、标点、半截句子当物品
+        if (!s.all { it.code in 0x4E00..0x9FFF || it in 'a'..'z' || it in 'A'..'Z' }) return null
+        return s
+    }
+
+    /** 解析 ASR 文本，返回 Found / Target / FreeTarget / null。 */
     fun parseCommand(text: String): Command? {
         if (text.isBlank()) return null
         if (FOUND_WORDS.any { text.contains(it) }) return Command.Found
         for (p in TARGET_PREFIXES.sortedByDescending { it.length }) {
             if (text.contains(p)) {
                 val rest = text.replace(p, "", ignoreCase = false)
-                val id = matchTarget(rest) ?: matchTarget(text)
-                if (id != null) return Command.Target(id)
+                (matchTarget(rest) ?: matchTarget(text))?.let { return Command.Target(it) }
+                // 不在 COCO 清单里的物品：照样接单，走识图兜底
+                plausibleItemName(rest)?.let { return Command.FreeTarget(it) }
             }
         }
         return matchTarget(text)?.let { Command.Target(it) }
