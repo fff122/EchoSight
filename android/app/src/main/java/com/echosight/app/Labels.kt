@@ -116,7 +116,22 @@ object Labels {
         /** COCO 之外的目标（耳机、药盒…）：YOLO 不认识，交给识图兜底。 */
         data class FreeTarget(val name: String) : Command()
         data object Help : Command()
+
+        // ---- 方案A：扫描与记忆 ----
+        data object ScanStart : Command()
+        data object ScanDone : Command()
+        data object ScanCancel : Command()
+        data class MemoryWhere(val name: String) : Command()
+        data class MemoryNote(val item: String, val spot: String) : Command()
+        data class MemoryForget(val name: String) : Command()
+        data class RoomHere(val room: String) : Command()
     }
+
+    /** 常用房间名：用户口述时优先按这个表识别。 */
+    val ROOMS = listOf("客厅", "卧室", "厨房", "卫生间", "阳台",
+                       "书房", "餐厅", "走廊", "储物间")
+
+    fun matchRoom(text: String): String? = ROOMS.firstOrNull { text.contains(it) }
 
     /** 从一句话里按最长别名匹配，返回类别 id；匹配不到返回 null。 */
     fun matchTarget(text: String): Int? {
@@ -131,7 +146,7 @@ object Labels {
         "一下", "东西", "帮忙", "谢谢", "没有", "找到", "别", "不", "你", "我", "他", "她", "它")
 
     /** 剥掉引导词后，剩下的部分像不像一个物品名（耳机/药盒…）。 */
-    private fun plausibleItemName(rest: String): String? {
+    fun plausibleItemName(rest: String): String? {
         var s = rest.replace(" ", "").trim()   // ASR 可能在字间插空格
         for (lead in arrayOf("一个", "个", "些")) {
             if (s.startsWith(lead)) { s = s.removePrefix(lead).trim(); break }
@@ -154,6 +169,44 @@ object Labels {
             (t.length <= 6 && (t.contains("功能") || t.contains("教程") ||
                 t.contains("怎么用")))
         if (isHelp) return Command.Help
+        // ---- 记忆类指令（顺序在找目标之前，防"找"前缀抢走）----
+        for (p in arrayOf("记一下", "记住", "记录一下", "记录")) {
+            if (t.startsWith(p)) {
+                val rest = t.removePrefix(p).trimStart('，', ',', '。').trim()
+                val i = rest.indexOf('在')
+                val item = plausibleItemName(if (i > 0) rest.substring(0, i) else rest)
+                if (item != null) {
+                    val spot = if (i > 0) rest.substring(i + 1).trim() else ""
+                    return Command.MemoryNote(item, spot)
+                }
+            }
+        }
+        for (p in arrayOf("忘掉", "删掉", "删除")) {
+            if (t.contains(p)) {
+                val n = plausibleItemName(t.replace(p, "").trim())
+                if (n != null) return Command.MemoryForget(n)
+            }
+        }
+        if (t.contains("在哪")) {
+            val n = t.replace("在哪里", "").replace("在哪儿", "").replace("在哪", "")
+                .replace("呢", "").replace("？", "").replace("?", "").trim()
+            plausibleItemName(n)?.let { return Command.MemoryWhere(it) }
+        }
+        // ---- 扫描 ----
+        if (t.contains("扫")) {
+            return when {
+                t.contains("取消") || t.contains("别") || t.contains("不") ->
+                    Command.ScanCancel
+                t.contains("完") || t.contains("结束") || t.contains("好") ->
+                    Command.ScanDone
+                else -> Command.ScanStart
+            }
+        }
+        // ---- "我在客厅"：申报当前房间 ----
+        if (t.startsWith("我在") && t.length <= 10) {
+            val rest = t.removePrefix("我在").trimEnd('呢', '啊', '了')
+            matchRoom(rest)?.let { return Command.RoomHere(it) }
+        }
         for (p in TARGET_PREFIXES.sortedByDescending { it.length }) {
             if (text.contains(p)) {
                 val rest = text.replace(p, "", ignoreCase = false)

@@ -53,6 +53,11 @@ class YoloDetector(context: Context) {
     @Volatile var snapshotRequest = false
     var onSnapshot: ((ByteArray) -> Unit)? = null
 
+    /** 本帧相对上一帧的画面变化程度（0~1）。扫描时用它决定要不要花钱问 AI。 */
+    var sceneChangeScore = 0f
+        private set
+    private var lastThumb: IntArray? = null
+
     /** 相机帧（YUV）→ 转正 Bitmap → 推理；返回框坐标基于转正后画面。 */
     fun detect(image: ImageProxy): List<DetBox> {
         val raw = yuvToBitmap(image)
@@ -63,6 +68,7 @@ class YoloDetector(context: Context) {
         if (rotated != raw) raw.recycle()
 
         val boxes = infer(rotated)
+        sceneChangeScore = sceneScore(rotated)
 
         if (snapshotRequest) {
             snapshotRequest = false
@@ -70,6 +76,24 @@ class YoloDetector(context: Context) {
         }
         rotated.recycle()
         return boxes
+    }
+
+    /** 16x16 灰度缩略图的平均差，纯本地、每帧成本可忽略。 */
+    private fun sceneScore(bmp: Bitmap): Float {
+        val small = Bitmap.createScaledBitmap(bmp, 16, 16, true)
+        val px = IntArray(256)
+        small.getPixels(px, 0, 16, 0, 0, 16, 16)
+        if (small !== bmp) small.recycle()
+        val gray = IntArray(256) { i ->
+            val c = px[i]
+            ((c shr 16 and 0xFF) * 3 + (c shr 8 and 0xFF) * 6 + (c and 0xFF)) / 10
+        }
+        val prev = lastThumb
+        lastThumb = gray
+        if (prev == null) return 1f
+        var diff = 0
+        for (i in 0 until 256) diff += Math.abs(gray[i] - prev[i])
+        return diff / 255f / 256f
     }
 
     val frameWidth get() = _frameWidth
