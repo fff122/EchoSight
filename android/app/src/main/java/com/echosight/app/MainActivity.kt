@@ -71,6 +71,21 @@ class MainActivity : AppCompatActivity() {
     @Volatile private var visionSignature: String? = null
     @Volatile private var visionName: String? = null
 
+    // 帮助对话状态：0=不在帮助中，1=已列功能等"是否播教程"，2=等"哪个功能"
+    @Volatile private var helpStage = 0
+
+    private val tutorials = linkedMapOf(
+        "找东西" to "按住屏幕下方的大按钮，说，找，加物品名字，比如，找杯子。" +
+                "常见物品像椅子、电视、手机，我会实时告诉你方位和距离。" +
+                "它不认识的物品，比如耳机、药盒，我也会接单，请AI定期帮你看画面。" +
+                "找到后说，找到了，我就安静待命。",
+        "待命" to "找到东西以后，说，找到了，我就不播报了。" +
+                "想找别的东西，再按住按钮说，找，加新名字。",
+        "AI帮看" to "遇到我不认识的物品，或者目标一时找不到，我会自动抓拍画面，" +
+                "请AI帮忙看，大约每十五秒一次，看到就告诉你它在画面里的位置。",
+        "帮助" to "任何时候按住按钮说，帮助，我会列出所有功能，还能一个个教你用法。"
+    )
+
     private val permissionLauncher: ActivityResultLauncher<Array<String>> =
         registerForActivityResult(
             ActivityResultContracts.RequestMultiplePermissions()) { result ->
@@ -288,7 +303,13 @@ class MainActivity : AppCompatActivity() {
         setStatus("正在识别，请稍等…", R.color.status_icon_active)
         lifecycleScope.launch {
             val text = withContext(Dispatchers.IO) { api.transcribe(wav) }
+            // 帮助多轮对话进行中：本轮优先按帮助流程处理
+            if (helpStage != 0) {
+                handleHelpReply(text)
+                return@launch
+            }
             when (val cmd = Labels.parseCommand(text)) {
+                Labels.Command.Help -> showHelpMenu()
                 is Labels.Command.Target -> switchTarget(cmd.classId)
                 is Labels.Command.FreeTarget -> switchFreeTarget(cmd.name)
                 Labels.Command.Found -> {
@@ -354,6 +375,91 @@ class MainActivity : AppCompatActivity() {
         lastVisionCheck = 0L
         setStatus("当前目标：$name（AI帮看）")
         speak("好的，帮你寻找$name。它不在常见物品清单里，我会每隔一会儿请AI帮你看画面，找到后告诉你位置。拿到后说，找到了。")
+    }
+
+    // ---------------- 帮助 / 使用教程 ----------------
+    /** 列出全部功能，并问是否播报教程。 */
+    private fun showHelpMenu() {
+        helpStage = 1
+        val names = tutorials.keys.toList()
+        val list = names.mapIndexed { i, n -> "${'一' + i}，$n" }.joinToString("；")
+        speak("本应用共有${names.size}个功能：$list。需要我播报使用教程吗？" +
+                "需要就说，是；不需要就说，不用。")
+        setStatus("帮助：已列功能，等你说是否要教程", R.color.status_icon_active)
+    }
+
+    /** 帮助对话中的一轮回答。说"找XX"等正常指令可直接跳出帮助去执行。 */
+    private fun handleHelpReply(text: String) {
+        val t = text.replace(" ", "")
+        val no = t.contains("不") || t.contains("取消") || t.contains("退出") ||
+                t.contains("算了")
+        val yes = t.contains("是") || t.contains("要") || t == "好" ||
+                t.contains("需要") || t.contains("可以") || t == "行"
+        val all = t.contains("全部") || t.contains("挨个") || t.contains("都讲") ||
+                t.contains("都听") || t == "都"
+        when (helpStage) {
+            1 -> when {
+                no -> exitHelp()
+                yes -> {
+                    helpStage = 2
+                    speak("你要学哪个功能？${tutorials.keys.joinToString("，")}。" +
+                            "说全部，我就从第一个开始挨个讲。")
+                }
+                else -> if (!executeIfNormalCommand(text)) {
+                    speak("没听懂。需要播报使用教程就说，是；不需要就说，不用。")
+                }
+            }
+            2 -> {
+                val key = tutorials.keys.firstOrNull { t.contains(it) }
+                when {
+                    all -> {
+                        helpStage = 0
+                        speak("好的，下面从第一个功能开始挨个讲，请听。")
+                        tutorials.values.forEach { speak(it) }
+                        setStatus("帮助：正在播放全部教程", R.color.status_icon_active)
+                    }
+                    key != null -> {
+                        helpStage = 0
+                        speak(tutorials[key]!!)
+                        setStatus("帮助：${key}教程已播报", R.color.status_icon_active)
+                    }
+                    no -> exitHelp()
+                    else -> if (!executeIfNormalCommand(text)) {
+                        speak("没听懂。可以说：${tutorials.keys.joinToString("，")}，" +
+                                "或者，全部，或者，退出。")
+                    }
+                }
+            }
+        }
+    }
+
+    /** 帮助对话里用户直接说了正常指令：退出帮助并执行，返回是否执行了。 */
+    private fun executeIfNormalCommand(text: String): Boolean {
+        return when (val cmd = Labels.parseCommand(text)) {
+            is Labels.Command.Target -> {
+                helpStage = 0
+                switchTarget(cmd.classId)
+                true
+            }
+            is Labels.Command.FreeTarget -> {
+                helpStage = 0
+                switchFreeTarget(cmd.name)
+                true
+            }
+            Labels.Command.Found -> {
+                helpStage = 0
+                standby = true
+                speak("好的，我先安静待命。要找别的东西时，按住按钮说，找，加上物品名字。")
+                true
+            }
+            else -> false
+        }
+    }
+
+    private fun exitHelp() {
+        helpStage = 0
+        speak("好的，已退出帮助。需要时再按住按钮说，帮助。")
+        setStatus("等待指令：按住下方大按钮说话", R.color.status_card_text)
     }
 
     // ---------------- 识图兜底 ----------------

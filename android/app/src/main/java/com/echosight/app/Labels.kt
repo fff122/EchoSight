@@ -115,6 +115,7 @@ object Labels {
 
         /** COCO 之外的目标（耳机、药盒…）：YOLO 不认识，交给识图兜底。 */
         data class FreeTarget(val name: String) : Command()
+        data object Help : Command()
     }
 
     /** 从一句话里按最长别名匹配，返回类别 id；匹配不到返回 null。 */
@@ -142,10 +143,17 @@ object Labels {
         return s
     }
 
-    /** 解析 ASR 文本，返回 Found / Target / FreeTarget / null。 */
+    /** 解析 ASR 文本，返回 Found / Target / FreeTarget / Help / null。 */
     fun parseCommand(text: String): Command? {
         if (text.isBlank()) return null
-        if (FOUND_WORDS.any { text.contains(it) }) return Command.Found
+        val t = text.trim()
+        if (FOUND_WORDS.any { t.contains(it) }) return Command.Found
+        // 帮助只认短句：避免"帮助我找杯子"被当成帮助
+        val isHelp = t in setOf("帮助", "帮助一下", "使用教程") ||
+            (t.length <= 4 && t.contains("帮助")) ||
+            (t.length <= 6 && (t.contains("功能") || t.contains("教程") ||
+                t.contains("怎么用")))
+        if (isHelp) return Command.Help
         for (p in TARGET_PREFIXES.sortedByDescending { it.length }) {
             if (text.contains(p)) {
                 val rest = text.replace(p, "", ignoreCase = false)
