@@ -33,3 +33,10 @@ desktop.ini
 AndroidSDK/
 android/app/api_key.txt
 android/app/siliconflow_key.txt
+
+# ---- 大模型与中间产物（不入仓库；安卓 assets 里的 onnx 除外，CI 需要）----
+/*.pt
+weights/
+models/*.onnx
+.mobileclip_*.part
+.claude-action-*.tmp.md

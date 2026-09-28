@@ -12,7 +12,14 @@ object Labels {
         "香蕉", "苹果", "三明治", "橙子", "西兰花", "胡萝卜", "热狗", "披萨", "甜甜圈",
         "蛋糕", "椅子", "沙发", "盆栽", "床", "餐桌", "马桶", "电视", "笔记本电脑",
         "鼠标", "遥控器", "键盘", "手机", "微波炉", "烤箱", "烤面包机", "水槽", "冰箱",
-        "书", "时钟", "花瓶", "剪刀", "玩具熊", "吹风机", "牙刷"
+        "书", "时钟", "花瓶", "剪刀", "玩具熊", "吹风机", "牙刷",
+        // ---- YOLO-World 家居扩展词表（id 80-119，顺序与 make_world_onnx.py 的 EXT 一致）----
+        "耳机", "药盒", "钥匙", "眼镜", "充电器", "充电宝", "数据线",
+        "保温杯", "拖鞋", "纸巾盒", "梳子", "钱包", "手表", "笔",
+        "记事本", "水壶", "电饭煲", "电风扇", "药瓶", "毛巾", "肥皂",
+        "洗发水", "牙膏", "饭盒", "牛奶", "鸡蛋", "台灯", "闹钟",
+        "插线板", "拐杖", "轮椅", "助行器", "收音机", "计算器", "帽子",
+        "围巾", "手套", "垃圾桶", "手电筒", "电池"
     )
 
     /** 中文口语别名 -> 类别 id。 */
@@ -91,6 +98,47 @@ object Labels {
         put("玩具熊", 77); put("小熊", 77); put("泰迪熊", 77)
         put("吹风机", 78)
         put("牙刷", 79)
+        // ---- 家居扩展（id 80-119）----
+        put("耳机", 80); put("蓝牙耳机", 80); put("耳麦", 80)
+        put("药盒", 81); put("药箱", 81)
+        put("钥匙", 82); put("钥匙串", 82)
+        put("眼镜", 83); put("老花镜", 83); put("太阳镜", 83)
+        put("充电器", 84); put("充电头", 84)
+        put("充电宝", 85); put("移动电源", 85)
+        put("数据线", 86); put("充电线", 86)
+        put("保温杯", 87); put("保温壶", 87)
+        put("拖鞋", 88)
+        put("纸巾盒", 89); put("抽纸", 89)
+        put("梳子", 90)
+        put("钱包", 91)
+        put("手表", 92); put("腕表", 92)
+        put("笔", 93); put("钢笔", 93); put("圆珠笔", 93)
+        put("记事本", 94); put("本子", 94)
+        put("水壶", 95); put("烧水壶", 95); put("电水壶", 95)
+        put("电饭煲", 96); put("电饭锅", 96)
+        put("电风扇", 97); put("风扇", 97)
+        put("药瓶", 98); put("药罐", 98)
+        put("毛巾", 99); put("浴巾", 99)
+        put("肥皂", 100); put("香皂", 100)
+        put("洗发水", 101); put("洗发露", 101)
+        put("牙膏", 102)
+        put("饭盒", 103); put("便当盒", 103)
+        put("牛奶", 104); put("牛奶盒", 104)
+        put("鸡蛋", 105)
+        put("台灯", 106); put("桌灯", 106)
+        put("闹钟", 107)
+        put("插线板", 108); put("排插", 108)
+        put("拐杖", 109); put("拐棍", 109); put("手杖", 109)
+        put("轮椅", 110)
+        put("助行器", 111)
+        put("收音机", 112)
+        put("计算器", 113)
+        put("帽子", 114)
+        put("围巾", 115)
+        put("手套", 116)
+        put("垃圾桶", 117); put("纸篓", 117)
+        put("手电筒", 118)
+        put("电池", 119)
     }
 
     /** 真实世界高度（米），用于单目测距；缺失时用默认 0.3。 */
@@ -98,15 +146,23 @@ object Labels {
         0 to 1.7f, 1 to 1.1f, 2 to 1.5f, 3 to 1.2f, 5 to 3.0f, 7 to 3.0f,
         39 to 0.25f, 41 to 0.10f, 67 to 0.15f, 65 to 0.18f, 73 to 0.20f,
         63 to 0.25f, 56 to 0.9f, 24 to 0.5f, 62 to 0.7f, 66 to 0.15f,
-        64 to 0.04f, 25 to 0.9f, 15 to 0.25f, 16 to 0.45f
+        64 to 0.04f, 25 to 0.9f, 15 to 0.25f, 16 to 0.45f,
+        80 to 0.06f, 81 to 0.08f, 82 to 0.03f, 83 to 0.04f, 84 to 0.05f,
+        85 to 0.10f, 86 to 0.05f, 87 to 0.18f, 88 to 0.08f, 89 to 0.12f,
+        90 to 0.03f, 91 to 0.03f, 92 to 0.03f, 93 to 0.02f, 94 to 0.02f,
+        95 to 0.20f, 96 to 0.25f, 97 to 0.40f, 98 to 0.08f, 99 to 0.05f,
+        100 to 0.03f, 101 to 0.20f, 102 to 0.04f, 103 to 0.08f, 104 to 0.18f,
+        105 to 0.05f, 106 to 0.35f, 107 to 0.10f, 108 to 0.05f, 109 to 0.85f,
+        110 to 0.90f, 111 to 0.80f, 112 to 0.15f, 113 to 0.03f, 114 to 0.15f,
+        115 to 0.10f, 116 to 0.03f, 117 to 0.40f, 118 to 0.15f, 119 to 0.03f
     )
     const val DEFAULT_HEIGHT = 0.3f
 
     private val FOUND_WORDS = arrayOf("找到了", "找着了")
     private val TARGET_PREFIXES = arrayOf(
-        "帮我找一个", "帮我找下", "帮我找", "我要找一个", "我要找下", "我要找",
-        "我想找一个", "我想找下", "我想找", "请找一个", "请找下", "请找", "找一个",
-        "找下", "找", "换成", "换一个", "换个", "换"
+        "帮我找一个", "帮我找下", "帮我找", "帮我寻找", "我要找一个", "我要找下",
+        "我要找", "我想找一个", "我想找下", "我想找", "请找一个", "请找下",
+        "请找", "找一个", "找下", "找找", "寻找", "找", "换成", "换一个", "换个", "换"
     )
 
     sealed class Command {
@@ -161,7 +217,9 @@ object Labels {
     /** 解析 ASR 文本，返回 Found / Target / FreeTarget / Help / null。 */
     fun parseCommand(text: String): Command? {
         if (text.isBlank()) return null
-        val t = text.trim()
+        // ASR 可能在字间插空格（"寻找 耳机"）：先去掉，防止剥前缀后剩下"寻耳机"
+        val t = text.replace(" ", "").trim()
+        if (t.isEmpty()) return null
         if (FOUND_WORDS.any { t.contains(it) }) return Command.Found
         // 帮助只认短句：避免"帮助我找杯子"被当成帮助
         val isHelp = t in setOf("帮助", "帮助一下", "使用教程") ||
@@ -208,13 +266,13 @@ object Labels {
             matchRoom(rest)?.let { return Command.RoomHere(it) }
         }
         for (p in TARGET_PREFIXES.sortedByDescending { it.length }) {
-            if (text.contains(p)) {
-                val rest = text.replace(p, "", ignoreCase = false)
-                (matchTarget(rest) ?: matchTarget(text))?.let { return Command.Target(it) }
+            if (t.contains(p)) {
+                val rest = t.replace(p, "", ignoreCase = false)
+                (matchTarget(rest) ?: matchTarget(t))?.let { return Command.Target(it) }
                 // 不在 COCO 清单里的物品：照样接单，走识图兜底
                 plausibleItemName(rest)?.let { return Command.FreeTarget(it) }
             }
         }
-        return matchTarget(text)?.let { Command.Target(it) }
+        return matchTarget(t)?.let { Command.Target(it) }
     }
 }

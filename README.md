@@ -42,7 +42,7 @@ py -c "from ultralytics import YOLO; [YOLO(f'models/{n}.pt') for n in ('yolo26n'
 
 ## 手机 App（Android）
 
-手机本地运行 YOLO 模型，无需电脑；语音识别/合成仍走 SenseAudio 云端。
+手机本地运行 YOLO-World（120 类 = COCO 80 + 家居扩展 40，耳机/药盒/钥匙等直接本地找）；语音识别、语音播报走 SenseAudio 云端，AI 识图走 SiliconFlow 云端。
 
 **使用方式：**
 
@@ -60,9 +60,14 @@ py -c "from ultralytics import YOLO; [YOLO(f'models/{n}.pt') for n in ('yolo26n'
 > Secret `SENSEAUDIO_API_KEY`（值为 `sk-` 开头的 Key），否则 APK 没有语音功能。
 > 本地构建可在 `android/app/api_key.txt` 放入 Key（已 gitignore）。
 
-**重新导出端侧模型（更换模型时）：**
+**重新生成端侧模型（更换词表时）：**
+
+改 `scripts/make_world_onnx.py` 里的 `EXT` 词表，然后：
 
 ```powershell
-py -c "from ultralytics import YOLO; m=YOLO('models/yolo26n.pt'); m.export(format='onnx', imgsz=320, simplify=True)"
-copy models\yolo26n.onnx android\app\src\main\assets\
+buildenv\Scripts\python.exe scripts\make_world_onnx.py
+copy models\yolov8s-world-vocab-320.onnx android\app\src\main\assets\
 ```
+
+脚本会同步生成 `world_labels_kotlin.txt` / `world_labels_py.txt`（Labels 映射增量），
+需按提示粘进两端 Labels 后重新打包。

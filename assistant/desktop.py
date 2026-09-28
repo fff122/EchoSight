@@ -18,6 +18,7 @@ from . import config
 from .audio_api import listen
 from .detector import Detector
 from .display import draw_frame
+from .found_loop import FoundLostSpeaker
 from .geometry import estimate
 from .labels import CLASS_CN, match_target
 from .speaker import set_playback_hooks, speak
@@ -101,9 +102,8 @@ class DesktopApp:
         frame_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fx = frame_w * config.FX_FACTOR
 
-        search_start = time.time()
-        last_lose_prompt = 0
-        last_found_report = 0
+        found_speaker = FoundLostSpeaker(lose_after=6.0)
+        found_speaker.reset(time.time())
         prev_t = time.time()
 
         print("扫描中，语音说“找到了”待命，说“找XX”换目标，按 Q 退出...")
@@ -133,32 +133,29 @@ class DesktopApp:
             if standby:
                 status = "已找到，安静待命。需要时请说：找XX"
             elif detections:
-                search_start = now
                 nearest = max(detections,
                               key=lambda d: (d[3] - d[1]) * (d[2] - d[0]))
                 dist, direction = nearest[6], nearest[7]
                 status = f"找到{target_cn}：{direction} 约{dist:.1f}米"
-                if now - last_found_report > config.FOUND_REPORT_INTERVAL:
-                    if dist < 0.5:
-                        speak(f"{target_cn}就在面前，很近了，大约{dist:.1f}米。")
+                ev = found_speaker.update(now, True, dist, direction)
+                if ev:
+                    d, dr = ev[1], ev[2]
+                    if d is not None and d < 0.5:
+                        speak(f"{target_cn}就在面前，很近了，大约{d:.1f}米。")
                     else:
-                        speak(f"{target_cn}在{direction}，距离大约{dist:.1f}米。")
-                    last_found_report = now
+                        speak(f"{target_cn}在{dr}，距离大约{d:.1f}米。")
             else:
                 status = f"寻找{target_cn}中..."
-                if (now - search_start > 6 and
-                        now - last_lose_prompt > config.LOSE_PROMPT_INTERVAL):
+                ev = found_speaker.update(now, False)
+                if ev is not None:
                     speak(f"没有看到{target_cn}，请移动手机寻找目标。")
-                    last_lose_prompt = now
 
             fps = 1 / (now - prev_t)
             prev_t = now
-            # 切换目标后重置搜索计时
+            # 切换目标后重置播报状态机
             if target_en != getattr(self, "_last_target", None):
                 self._last_target = target_en
-                search_start = now
-                last_lose_prompt = now
-                last_found_report = now
+                found_speaker.reset(now)
 
             shown = draw_frame(frame, detections, f"{status}   {fps:.0f}FPS")
             cv2.imshow("盲人识物助手 - 语音控制 Q退出", shown)

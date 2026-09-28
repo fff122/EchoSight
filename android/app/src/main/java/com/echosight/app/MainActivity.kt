@@ -64,10 +64,12 @@ class MainActivity : AppCompatActivity() {
     private var searchStart = 0L
     private var lastLosePrompt = 0L
     private var lastFoundReport = 0L
-    private var ttsCounter = 0
 
     // 用于进展播报与丢失记忆
     private var lastSpokenDist: Float? = null
+    private var lastSpokenDir: String? = null
+    private var hitStreak = 0            // 连续命中帧数（去抖用）
+    private var stableFound = false      // 通过去抖的"稳定找到"状态
     @Volatile private var lastSeenHit: Guidance.Hit? = null
     private var lastSeenTime = 0L
 
@@ -79,6 +81,12 @@ class MainActivity : AppCompatActivity() {
     @Volatile private var pendingSnapshotUse = ""   // "find"=找目标 / "scan"=扫描
     private var lastVisionFoundPos: String? = null
     private var lastVisionFoundTime = 0L
+
+    // AI 找到目标后按其返回的外接框画的虚拟框（保留到下一次 AI 查看，6 秒过期）
+    @Volatile private var visionBox: DrawBox? = null
+    @Volatile private var visionBoxUntil = 0L
+    private var lastVisionSpokenDist: Float? = null
+    private var lastVisionSpokenPos: String? = null
 
     // ---------------- 方案A：引导扫描 + 记忆 ----------------
     // 0=空闲 1=问房间 2=扫描中 3=收尾打框
@@ -247,7 +255,8 @@ class MainActivity : AppCompatActivity() {
 
         // COCO 外的自由目标：YOLO 无能为力，定期请 AI 看画面
         if (tid == null) {
-            overlay.drawBoxes = emptyList()
+            overlay.drawBoxes = listOfNotNull(
+                visionBox?.takeIf { now < visionBoxUntil })
             setStatus("寻找$ft 中…（AI 每隔一会儿帮你看一眼画面）",
                 R.color.status_icon_active)
             maybeAskVision(now)
@@ -261,6 +270,7 @@ class MainActivity : AppCompatActivity() {
 
         if (hits.isNotEmpty()) {
             searchStart = now
+            hitStreak += 1
             val nearest = hits.maxBy {
                 (it.box.y2 - it.box.y1) * (it.box.x2 - it.box.x1) }
             lastSeenHit = nearest
@@ -275,27 +285,49 @@ class MainActivity : AppCompatActivity() {
                     "${"%.1f".format(nearest.dist)}米",
                 R.color.status_icon_found)
 
-            if (now - lastFoundReport > FOUND_REPORT_INTERVAL) {
-                val prev = lastSpokenDist
-                val phrase = if (prev == null || now - lastFoundReport >
-                        FOUND_REPORT_INTERVAL * 1.6f) {
-                    Guidance.fullReport(cn, nearest, hits.size)
-                } else {
-                    Guidance.briefReport(cn, nearest, nearest.dist - prev)
-                }
+            // 与 assistant/found_loop.py 同一套规则（改逻辑两端同步）：
+            // 去抖通过才首次播报；之后只在距离/方位有变化时播简报
+            if (!stableFound && hitStreak >= STABLE_HIT_STREAK) {
+                stableFound = true
                 lastSpokenDist = nearest.dist
-                speak(phrase)
+                lastSpokenDir = nearest.direction
                 lastFoundReport = now
+                speak(Guidance.fullReport(cn, nearest, hits.size))
                 MemoryStore.touch(cn, currentRoom)
+            } else if (stableFound &&
+                now - lastFoundReport > FOUND_REPORT_INTERVAL) {
+                val moved = lastSpokenDist == null ||
+                        Math.abs(nearest.dist - lastSpokenDist!!) >
+                            FOUND_CHANGE_DELTA
+                val turned = nearest.direction != lastSpokenDir
+                if (moved || turned) {
+                    val prev = lastSpokenDist ?: nearest.dist
+                    speak(Guidance.briefReport(cn, nearest,
+                        nearest.dist - prev))
+                    lastSpokenDist = nearest.dist
+                    lastSpokenDir = nearest.direction
+                    lastFoundReport = now
+                    MemoryStore.touch(cn, currentRoom)
+                }
             }
         } else {
-            overlay.drawBoxes = emptyList()
+            hitStreak = 0
+            // 本地没看到，但 AI 刚说过"有"：把 AI 的框画上，别让画面空着
+            overlay.drawBoxes = listOfNotNull(
+                visionBox?.takeIf { now < visionBoxUntil })
             val age = now - lastSeenTime
             setStatus("寻找$cn 中…", R.color.status_card_text)
-            if (now - searchStart > 4000 &&
+            val sinceSeen = if (stableFound) now - lastSeenTime
+                            else now - searchStart
+            if (sinceSeen > 4000 &&
                 now - lastLosePrompt > LOSE_PROMPT_INTERVAL) {
                 speak(Guidance.lostReport(cn, lastSeenHit, age))
                 lastLosePrompt = now
+                if (stableFound) {
+                    stableFound = false
+                    lastSpokenDist = null
+                    lastSpokenDir = null
+                }
             }
             maybeAskVision(now)
         }
@@ -403,9 +435,16 @@ class MainActivity : AppCompatActivity() {
         lastLosePrompt = now
         lastFoundReport = now
         lastSpokenDist = null
+        lastSpokenDir = null
+        hitStreak = 0
+        stableFound = false
         lastSeenHit = null
         lastSeenTime = 0L
         lastVisionCheck = 0L
+        visionBox = null
+        visionBoxUntil = 0L
+        lastVisionSpokenDist = null
+        lastVisionSpokenPos = null
         setStatus("当前目标：$cn")
         val hint = when {
             rec != null && rec.spot.isNotBlank() -> "记忆里它在${rec.room}的${rec.spot}。"
@@ -433,9 +472,16 @@ class MainActivity : AppCompatActivity() {
         lastLosePrompt = now
         lastFoundReport = now
         lastSpokenDist = null
+        lastSpokenDir = null
+        hitStreak = 0
+        stableFound = false
         lastSeenHit = null
         lastSeenTime = 0L
         lastVisionCheck = 0L
+        visionBox = null
+        visionBoxUntil = 0L
+        lastVisionSpokenDist = null
+        lastVisionSpokenPos = null
         val rec = MemoryStore.find(name)
         val hint = when {
             rec != null && rec.spot.isNotBlank() -> "记忆里它在${rec.room}的${rec.spot}。"
@@ -822,7 +868,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** 找目标：异步问模型，回来播报。期间换目标/进入待命则丢弃。 */
+    /** 找目标：异步问模型，回来画框/测距/播报。期间换目标/进入待命则丢弃。 */
     private fun processFindSnapshot(jpeg: ByteArray) {
         val sig = visionSignature ?: return
         val name = visionName ?: return
@@ -834,45 +880,98 @@ class MainActivity : AppCompatActivity() {
             setStatus(if (ref != null) "正在按照片比对，找$name…"
                       else "正在请 AI 帮忙看画面，找$name…",
                 R.color.status_icon_active)
-            val answer = withContext(Dispatchers.IO) {
+            val hit = withContext(Dispatchers.IO) {
                 if (ref != null) vision.findReference(ref.readBytes(), jpeg, name)
                 else vision.askAboutFrame(jpeg, name)
             }
             visionBusy = false
-            if (answer == null) {
+            if (hit == null) {
                 Log.w("MainActivity", "识图兜底失败")
                 return@launch
             }
             if (standby || currentSignature() != sig) return@launch
-            // 注意"没有看到耳机"也包含物品名，只认"有"开头的回答
-            val found = answer.startsWith("有")
-            if (found) {
-                lastVisionFoundPos = POS_WORDS.firstOrNull { answer.contains(it) }
-                lastVisionFoundTime = System.currentTimeMillis()
-                MemoryStore.touch(name, currentRoom)
-            } else if (lastVisionFoundPos != null &&
-                System.currentTimeMillis() - lastVisionFoundTime < 25000) {
-                // 刚看到过现在又说没有：多半是走过头了，往回带
-                val dir = when (lastVisionFoundPos) {
-                    "左上", "左中", "左下" -> "往左"
-                    "右上", "右中", "右下" -> "往右"
-                    else -> "原地"
-                }
-                speak("$name 刚才还在画面里，请放慢脚步，$dir 慢慢转回去找。")
-            } else {
-                lastVisionFoundPos = null
+            val now = System.currentTimeMillis()
+
+            // 方位词：JSON 给了用 JSON 的；模型没守格式就从原文里找
+            val pos = hit.pos.ifBlank {
+                POS_WORDS.firstOrNull { hit.note.contains(it) } ?: ""
             }
-            val tip = if (found) "拿到后说，找到了。" else ""
-            speak("我请AI仔细看了画面：$answer。$tip")
-            setStatus("AI帮看：$answer",
-                if (found) R.color.status_icon_found else R.color.status_card_text)
+
+            if (!hit.found) {
+                visionBox = null
+                if (lastVisionFoundPos != null &&
+                    System.currentTimeMillis() - lastVisionFoundTime < 25000) {
+                    // 刚看到过现在又说没有：多半是走过头了，往回带
+                    val dir = when (lastVisionFoundPos) {
+                        "左上", "左中", "左下" -> "往左"
+                        "右上", "右中", "右下" -> "往右"
+                        else -> "原地"
+                    }
+                    speak("$name 刚才还在画面里，请放慢脚步，$dir 慢慢转回去找。")
+                } else {
+                    lastVisionFoundPos = null
+                }
+                setStatus("AI帮看：没找到$name", R.color.status_card_text)
+                return@launch
+            }
+
+            lastVisionFoundPos = pos.ifBlank { lastVisionFoundPos }
+            lastVisionFoundTime = now
+            MemoryStore.touch(name, currentRoom)
+
+            // 框 + 距离：与本地 YOLO 完全同一套算法（Guidance.buildHit 单目测距）
+            val b = hit.box
+            val fw = detector.frameWidth.toFloat()
+            val fh = detector.frameHeight.toFloat()
+            val heightId = targetId ?: -1        // 词表内目标用真实高度，其余用默认
+            if (b != null && b.size >= 4 && b[2] > b[0] && b[3] > b[1]) {
+                // 自动注册：把 AI 确认的那块裁下来存为参考照片，
+                // 之后对该物品的每次 AI 查看都升级成"照片比对"（更准）
+                if (MemoryStore.refPhoto(name) == null) {
+                    runCatching {
+                        saveReferenceCrops(jpeg, listOf(
+                            SiliconFlowApi.Grounded(name, b, pos)))
+                    }
+                }
+                val dbox = DetBox(
+                    (b[0] / 1000f * fw).coerceIn(0f, fw),
+                    (b[1] / 1000f * fh).coerceIn(0f, fh),
+                    (b[2] / 1000f * fw).coerceIn(0f, fw),
+                    (b[3] / 1000f * fh).coerceIn(0f, fh), -1, 1f)
+                val h = Guidance.buildHit(dbox, fw, fh, heightId)
+                visionBox = DrawBox(dbox,
+                    "$name ${h.direction} ${"%.1f".format(h.dist)}米")
+                visionBoxUntil = now + 6000      // 框保留到下一次 AI 查看
+
+                // 和本地找到/丢失同一哲学：有变化才播报，原地不动不吵
+                val moved = lastVisionSpokenDist == null ||
+                        Math.abs(h.dist - lastVisionSpokenDist!!) > 0.3f
+                val turned = h.direction != lastVisionSpokenPos
+                if (lastVisionSpokenDist == null || moved || turned) {
+                    lastVisionSpokenDist = h.dist
+                    lastVisionSpokenPos = h.direction
+                    speak("${name}在${h.direction}，${h.verticalTip}，" +
+                            "距离${Guidance.distanceWords(h.dist)}。" +
+                            "${Guidance.actionTip(h)}拿到后说，找到了。")
+                }
+                setStatus("AI帮看：${hit.note.ifBlank { "${name}在${h.direction}" }}",
+                    R.color.status_icon_found)
+            } else {
+                // 模型没给框：退回纯方位播报（老行为）
+                speak("${name}在画面${pos}。拿到后说，找到了。")
+                setStatus("AI帮看：${hit.note.ifBlank { "${name}在画面$pos" }}",
+                    R.color.status_icon_found)
+            }
         }
     }
 
-    // ---------------- 语音播放 ----------------
+    // ---------------- 语音播放（云端 TTS） ----------------
     @Volatile private var currentPlayer: MediaPlayer? = null
+    @Volatile private var ttsGeneration = 0
+    private var ttsCounter = 0
 
-    private fun stopSpeaking() = ttsExecutor.execute {
+    private fun stopSpeaking() {
+        ttsGeneration += 1    // 使队列中还没播放的任务全部失效
         currentPlayer?.runCatching {
             if (isPlaying) stop()
             release()
@@ -880,11 +979,19 @@ class MainActivity : AppCompatActivity() {
         currentPlayer = null
     }
 
+    /** 云端合成 + 串行播放：上一条播完才播下一条（长教程不被拦腰打断）；
+     *  用户按住说话或新指令会使 generation 变化，排队任务自动作废。 */
     private fun speak(text: String) {
+        val gen = ttsGeneration
         ttsExecutor.execute {
             val wav = api.synthesize(text) ?: return@execute
-            if (ptt.isRecording) return@execute
+            if (gen != ttsGeneration || ptt.isRecording) return@execute
             try {
+                while (currentPlayer?.isPlaying == true) {
+                    if (gen != ttsGeneration) return@execute
+                    Thread.sleep(80)
+                }
+                if (gen != ttsGeneration) return@execute
                 currentPlayer?.runCatching {
                     if (isPlaying) stop()
                     release()
@@ -931,6 +1038,8 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val LOSE_PROMPT_INTERVAL = 7000L
         private const val FOUND_REPORT_INTERVAL = 5000L
+        private const val STABLE_HIT_STREAK = 3      // 连续命中帧数才算稳定找到
+        private const val FOUND_CHANGE_DELTA = 0.3f  // 距离变化超过此值才再播报
 
         // 识图兜底节奏：走动时快、停着时省；自由目标几乎立刻先看一次
         private const val VISION_FIRST_FREE = 800L

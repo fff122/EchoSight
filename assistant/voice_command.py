@@ -17,10 +17,10 @@ from .labels import match_target
 
 FOUND_WORDS = ("找到了", "找着了", "找到了谢谢")
 # 目标指令里可能出现的引导词，剥掉后再交给别名匹配
-TARGET_PREFIXES = ("帮我找一个", "帮我找下", "帮我找", "我要找一个",
+TARGET_PREFIXES = ("帮我找一个", "帮我找下", "帮我找", "帮我寻找", "我要找一个",
                    "我要找下", "我要找", "我想找一个", "我想找下",
                    "我想找", "请找一个", "请找下", "请找", "找一个",
-                   "找下", "找", "换成", "换一个", "换个", "换")
+                   "找下", "找找", "寻找", "找", "换成", "换一个", "换个", "换")
 
 _block_frames = int(config.VAD_BLOCK_SEC * config.SAMPLE_RATE)
 _start_blocks = config.VAD_START_BLOCKS
@@ -33,6 +33,8 @@ def parse_command(text):
     """解析 ASR 文本，返回 ('found', None) 或 ('target', 英文名) 或 None。"""
     if not text:
         return None
+    # ASR 可能在字间插空格（"寻找 耳机"）：先去掉，防止剥前缀后剩下"寻耳机"
+    text = text.replace(" ", "")
     if any(w in text for w in FOUND_WORDS):
         return ("found", None)
     for p in sorted(TARGET_PREFIXES, key=len, reverse=True):

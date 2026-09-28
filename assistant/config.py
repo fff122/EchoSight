@@ -39,7 +39,7 @@ ASR_MODEL = "senseaudio-asr-1.5-260319"
 VOICE_ID = "female_0033_b"
 
 # ---------------- 目标检测 ----------------
-MODEL_PATH = MODELS_DIR / "yolo26m.pt"   # m：精度/速度平衡
+MODEL_PATH = MODELS_DIR / "yolov8s-world-vocab.pt"   # YOLO-World：COCO 80 + 家居扩展 40 类
 IMGSZ = 416                   # 推理分辨率（越小越快）
 CONF = 0.3
 FX_FACTOR = 0.85

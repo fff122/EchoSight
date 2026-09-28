@@ -7,6 +7,7 @@ import android.graphics.Color
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.RectF
+import android.util.Log
 import androidx.camera.core.ImageProxy
 import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
@@ -28,8 +29,11 @@ class YoloDetector(context: Context) {
     private val inputName: String
 
     private val inputSize = 320
-    private val confThreshold = 0.3f
+    private val confThreshold = 0.25f   // 开放词汇模型置信度整体偏低，略降阈值
     private val iouThreshold = 0.45f
+
+    // 推理后由输出张量形状动态确定的类别数（YOLO-World 词表可变，不再固定 80）
+    private val numClasses: Int
 
     // 复用的中间缓冲
     private val inputData = FloatArray(3 * inputSize * inputSize)
@@ -40,13 +44,18 @@ class YoloDetector(context: Context) {
     private val tmpTransform = Matrix()
 
     init {
-        val bytes = context.assets.open("yolo26n.onnx").use { it.readBytes() }
+        val bytes = context.assets.open("yolov8s-world-vocab-320.onnx").use { it.readBytes() }
         val opts = OrtSession.SessionOptions().apply {
             setIntraOpNumThreads(4)
             setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
         }
         session = env.createSession(bytes, opts)
         inputName = session.inputNames.first()
+        val outInfo = session.outputInfo.values.first().info
+                as ai.onnxruntime.TensorInfo
+        val outShape = outInfo.shape                          // [1, 4+nc, anchors]
+        numClasses = (outShape[1] - 4).toInt()
+        Log.i("YoloDetector", "模型加载完成：$numClasses 类（COCO 80 + 家居扩展）")
     }
 
     /** 置 true 时，下一次 detect() 把当帧压成 JPEG 并回调 [onSnapshot]（供识图兜底用）。 */
@@ -140,16 +149,17 @@ class YoloDetector(context: Context) {
         val output = session.run(Collections.singletonMap(inputName, tensor))
         tensor.close()
 
-        // 输出 [1, 84, 2100]：直接从 OnnxTensor 的 FloatBuffer 按索引读取
-        //（布局为 CHW，索引 = c*2100+i），避免转成 Java 多维数组
+        // 输出 [1, 4+nc, anchors]：YOLO-World 词表类数 nc 由模型决定，
+        // 从 OnnxTensor 的 FloatBuffer 按索引读取（布局 CHW，索引 = c*anchors+i）
         val outTensor = output.get(0) as OnnxTensor
         val fb = outTensor.floatBuffer
-        val anchors = fb.capacity() / 84      // 2100
+        val channels = 4 + numClasses
+        val anchors = fb.capacity() / channels
         val raw = ArrayList<DetBox>()
         for (i in 0 until anchors) {
             var bestScore = confThreshold
             var bestCls = -1
-            for (c in 0 until 80) {
+            for (c in 0 until numClasses) {
                 val s = fb.get(4 * anchors + c * anchors + i)
                 if (s > bestScore) {
                     bestScore = s
