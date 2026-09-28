@@ -148,49 +148,8 @@ class SiliconFlowApi(private val apiKey: String) {
         return VisionHit(text.startsWith("有"), "", null, clean)
     }
 
-    // ---------------- 扫描：短清单 + 打框 ----------------
-
-    /** 扫描途中的短清单：只要物品名。输出短所以快（约 5-8 秒）。 */
-    fun listItems(jpeg: ByteArray): List<String> {
-        val text = chat(singleImageContent(jpeg,
-            "列出画面里所有看得清的物品名，只用中文顿号分隔，最多6个，" +
-            "不要数量词，不要解释，不要坐标，不要JSON。"), 100)
-            ?: return emptyList()
-        return text.replace("```", "")
-            .split('、', '，', ',', ' ', '\n')
-            .map { it.trim().trimEnd('。', '.') }
-            .filter { it.isNotEmpty() && it.length <= 6 }
-    }
-
     /** 打框结果：物品名 + 0~1000 归一化坐标 + 方位词。 */
     data class Grounded(val item: String, val box: List<Float>, val pos: String)
-
-    /**
-     * 房间收尾打框：物品名 + 坐标框。输出长所以慢（10-70 秒），
-     * 只在每个房间扫完时调用一次。注意实测模型不一定守"最多N个"的约束，
-     * max_tokens 给足并容忍 JSON 被截断。
-     */
-    fun groundItems(jpeg: ByteArray): List<Grounded> {
-        val text = chat(singleImageContent(jpeg,
-            "仔细看图，找出最多8个清晰的物品。只输出JSON数组，不要其他文字：" +
-            "[{\"item\":\"中文名\",\"box\":[x1,y1,x2,y2],\"pos\":\"左上/右上/中间/左下/右下\"}]。" +
-            "坐标0到1000归一化，x1y1是左上角，x2y2是右下角。"), 700)
-            ?: return emptyList()
-        return runCatching {
-            val clean = text.replace("```json", "").replace("```", "").trim()
-            val s = clean.indexOf('[')
-            val e = clean.lastIndexOf(']')
-            if (s < 0 || e <= s) return emptyList()
-            val arr = JSONArray(clean.substring(s, e + 1))
-            (0 until arr.length()).mapNotNull { i ->
-                val o = arr.getJSONObject(i)
-                val b = o.getJSONArray("box").let { ba ->
-                    (0 until ba.length()).map { ba.getDouble(it).toFloat() } }
-                if (b.size < 4) null
-                else Grounded(o.getString("item").trim(), b, o.optString("pos", ""))
-            }
-        }.getOrDefault(emptyList())
-    }
 
     companion object {
         private const val TAG = "SiliconFlowApi"

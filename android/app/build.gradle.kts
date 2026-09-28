@@ -29,8 +29,8 @@ android {
         applicationId = "com.echosight.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "1.4-wordfix"
+        versionCode = 6
+        versionName = "1.5-core"
         buildConfigField("String", "SENSEAUDIO_KEY", "\"$senseAudioKey\"")
         buildConfigField("String", "SILICONFLOW_KEY", "\"$siliconFlowKey\"")
     }
