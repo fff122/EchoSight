@@ -88,6 +88,12 @@ class MainActivity : AppCompatActivity() {
     private var lastVisionSpokenDist: Float? = null
     private var lastVisionSpokenPos: String? = null
 
+    // 模板跟踪器：Qwen 定位一次后，本地每帧实时跟框
+    private var visionTracker: VisionTracker? = null
+    @Volatile private var trackedBox: DetBox? = null
+    @Volatile private var snapshotReqTime = 0L
+    private var lastVisionSpokenTime = 0L
+
     // 帮助对话状态：0=不在帮助中，1=已列功能等"是否播教程"，2=等"哪个功能"
     @Volatile private var helpStage = 0
 
@@ -171,6 +177,14 @@ class MainActivity : AppCompatActivity() {
     private fun startEverything() {
         detector = YoloDetector(this)
         detector.onSnapshot = { jpeg -> processFindSnapshot(jpeg) }
+        detector.frameHook = { bmp ->
+            val t = visionTracker
+            trackedBox = t?.update(bmp)
+            if (t != null && !t.active) {      // 跟丢：清掉可能过时的静态框
+                visionBox = null
+                visionBoxUntil = 0L
+            }
+        }
         bindCamera()
         bindPushButton()
         speak("回声视见已启动。请问你要寻找什么物品？请按住屏幕下方的大按钮，对着手机说话，说完松手。")
@@ -230,11 +244,27 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        // COCO 外的自由目标：YOLO 无能为力，定期请 AI 看画面
+        // COCO 外的自由目标：YOLO 无能为力，Qwen 定位后由模板跟踪器实时跟框
         if (tid == null) {
-            overlay.drawBoxes = listOfNotNull(
-                visionBox?.takeIf { now < visionBoxUntil })
-            setStatus("寻找$ft 中…（AI 每隔一会儿帮你看一眼画面）",
+            val trackActive = visionTracker?.active == true && trackedBox != null
+            overlay.drawBoxes = when {
+                trackActive -> {
+                    val h2 = Guidance.buildHit(trackedBox!!, frameW, frameH, -1)
+                    if ((Math.abs(h2.dist - (lastVisionSpokenDist ?: -9f)) > 0.3f ||
+                                h2.direction != lastVisionSpokenPos) &&
+                        now - lastVisionSpokenTime > 2000) {
+                        lastVisionSpokenDist = h2.dist
+                        lastVisionSpokenPos = h2.direction
+                        lastVisionSpokenTime = now
+                        speak("$ft 在${h2.direction}，${Guidance.distanceWords(h2.dist)}。")
+                    }
+                    listOf(DrawBox(trackedBox!!,
+                        "$ft ${h2.direction} ${"%.1f".format(h2.dist)}米"))
+                }
+                else -> listOfNotNull(visionBox?.takeIf { now < visionBoxUntil })
+            }
+            setStatus(if (trackActive) "跟踪$ft 中"
+                      else "寻找$ft 中…（AI 每隔一会儿帮你看一眼画面）",
                 R.color.status_icon_active)
             maybeAskVision(now)
             return
@@ -287,9 +317,25 @@ class MainActivity : AppCompatActivity() {
             }
         } else {
             hitStreak = 0
-            // 本地没看到，但 AI 刚说过"有"：把 AI 的框画上，别让画面空着
-            overlay.drawBoxes = listOfNotNull(
-                visionBox?.takeIf { now < visionBoxUntil })
+            // 本地没看到：优先画模板跟踪的实时框，其次 AI 的静态框
+            val trackActive = visionTracker?.active == true && trackedBox != null
+            overlay.drawBoxes = when {
+                trackActive -> {
+                    val h2 = Guidance.buildHit(trackedBox!!, frameW, frameH,
+                        tid ?: -1)
+                    if ((Math.abs(h2.dist - (lastVisionSpokenDist ?: -9f)) > 0.3f ||
+                                h2.direction != lastVisionSpokenPos) &&
+                        now - lastVisionSpokenTime > 2000) {
+                        lastVisionSpokenDist = h2.dist
+                        lastVisionSpokenPos = h2.direction
+                        lastVisionSpokenTime = now
+                        speak("$cn 在${h2.direction}，${Guidance.distanceWords(h2.dist)}。")
+                    }
+                    listOf(DrawBox(trackedBox!!,
+                        "$cn ${h2.direction} ${"%.1f".format(h2.dist)}米"))
+                }
+                else -> listOfNotNull(visionBox?.takeIf { now < visionBoxUntil })
+            }
             val age = now - lastSeenTime
             setStatus("寻找$cn 中…", R.color.status_card_text)
             val sinceSeen = if (stableFound) now - lastSeenTime
@@ -362,6 +408,8 @@ class MainActivity : AppCompatActivity() {
             is Labels.Command.FreeTarget -> switchFreeTarget(cmd.name)
             Labels.Command.Found -> {
                 standby = true
+                visionTracker?.stop()
+                trackedBox = null
                 speak("好的，我先安静待命。需要找别的东西时，按住按钮说，找，加上物品名字。")
             }
             null -> {
@@ -402,6 +450,9 @@ class MainActivity : AppCompatActivity() {
         visionBoxUntil = 0L
         lastVisionSpokenDist = null
         lastVisionSpokenPos = null
+        visionTracker?.stop()
+        visionTracker = null
+        trackedBox = null
         setStatus("当前目标：$cn")
         speak("好的，现在帮你寻找$cn。请把手机摄像头对准前方，慢慢转动身体，我会告诉你它在哪里。")
     }
@@ -434,6 +485,9 @@ class MainActivity : AppCompatActivity() {
         visionBoxUntil = 0L
         lastVisionSpokenDist = null
         lastVisionSpokenPos = null
+        visionTracker?.stop()
+        visionTracker = null
+        trackedBox = null
         val hint = if (RefStore.refPhoto(name) != null)
             "它有登记照片，我会按照片帮你认。"
         else ""
@@ -578,6 +632,7 @@ class MainActivity : AppCompatActivity() {
         lastVisionCheck = now
         visionSignature = sig
         visionName = name
+        snapshotReqTime = System.currentTimeMillis()
         detector.snapshotRequest = true
     }
 
@@ -655,16 +710,28 @@ class MainActivity : AppCompatActivity() {
                     "$name ${h.direction} ${"%.1f".format(h.dist)}米")
                 visionBoxUntil = now + 6000      // 框保留到下一次 AI 查看
 
-                // 和本地找到/丢失同一哲学：有变化才播报，原地不动不吵
-                val moved = lastVisionSpokenDist == null ||
-                        Math.abs(h.dist - lastVisionSpokenDist!!) > 0.3f
-                val turned = h.direction != lastVisionSpokenPos
-                if (lastVisionSpokenDist == null || moved || turned) {
+                // 启动模板跟踪：以 Qwen 框为起点，之后每帧本地实时跟
+                BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size)?.let { snapBmp ->
+                    val vt = VisionTracker()
+                    vt.start(snapBmp, dbox)
+                    visionTracker = vt
+                    snapBmp.recycle()
+                }
+
+                // 过期丢弃：回包比抓帧晚了 2.5 秒以上且场景在动，播的就是过去
+                val stale = now - snapshotReqTime > 2500
+                val changed = lastVisionSpokenDist == null ||
+                        Math.abs(h.dist - lastVisionSpokenDist!!) > 0.3f ||
+                        h.direction != lastVisionSpokenPos
+                if (!stale && changed) {
+                    stopSpeaking()               // 打断当前播报，优先报新结果
                     lastVisionSpokenDist = h.dist
                     lastVisionSpokenPos = h.direction
-                    speak("${name}在${h.direction}，${h.verticalTip}，" +
-                            "距离${Guidance.distanceWords(h.dist)}。" +
-                            "${Guidance.actionTip(h)}拿到后说，找到了。")
+                    lastVisionSpokenTime = now
+                    speak("${name}找到了，${h.direction}，" +
+                            "${Guidance.distanceWords(h.dist)}。拿到后说，找到了。")
+                } else if (stale) {
+                    detector.snapshotRequest = true   // 立即重查，不播旧位置
                 }
                 setStatus("AI帮看：${hit.note.ifBlank { "${name}在${h.direction}" }}",
                     R.color.status_icon_found)

@@ -62,6 +62,9 @@ class YoloDetector(context: Context) {
     @Volatile var snapshotRequest = false
     var onSnapshot: ((ByteArray) -> Unit)? = null
 
+    /** 每帧回调（转正后的画面，用后即回收；回调方需同步取用不可持有）。 */
+    var frameHook: ((Bitmap) -> Unit)? = null
+
     /** 本帧相对上一帧的画面变化程度（0~1）。扫描时用它决定要不要花钱问 AI。 */
     var sceneChangeScore = 0f
         private set
@@ -78,6 +81,7 @@ class YoloDetector(context: Context) {
 
         val boxes = infer(rotated)
         sceneChangeScore = sceneScore(rotated)
+        frameHook?.invoke(rotated)
 
         if (snapshotRequest) {
             snapshotRequest = false
